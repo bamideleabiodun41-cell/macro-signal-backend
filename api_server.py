@@ -142,7 +142,7 @@ def manual_refresh():
     return jsonify({"new_news_items": new_items})
 
 
-@app.route("/api/rebuild-all", methods=["POST"])
+@app.route("/api/rebuild-all", methods=["GET", "POST"])
 def rebuild_all_predictions():
     """
     Runs every registered predictor fresh and replaces active_predictions.json.
@@ -176,7 +176,7 @@ def get_calendar():
     return jsonify(get_release_schedule())
 
 
-@app.route("/api/calendar/refresh", methods=["POST"])
+@app.route("/api/calendar/refresh", methods=["GET", "POST"])
 def refresh_calendar():
     """Force a fresh pull from FRED/ONS, bypassing the 12-hour cache."""
     schedule = get_release_schedule(force_refresh=True)

@@ -111,7 +111,19 @@ def score_impact(headline, description):
 
 
 def generate_breakdown(headline, description, event_category=None, typical_impact=None):
-    """Call Claude to produce a plain-language impact breakdown."""
+    """
+    Call Claude to produce a plain-language impact breakdown.
+
+    Gracefully degrades if ANTHROPIC_API_KEY isn't set (e.g. running
+    without billing configured yet) — returns a simpler fallback note
+    instead of crashing the whole pipeline, so headlines still show up
+    in the News Radar even without the AI layer turned on.
+    """
+    if not ANTHROPIC_API_KEY or ANTHROPIC_API_KEY == "YOUR_KEY_HERE":
+        if event_category and typical_impact:
+            return f"[AI breakdown disabled] {typical_impact}"
+        return "[AI breakdown disabled — add ANTHROPIC_API_KEY to enable plain-language analysis]"
+
     event_context = ""
     if event_category:
         event_context = (
@@ -133,23 +145,29 @@ In under 80 words, explain in simple terms:
 
 Be direct and concrete. No hedging filler. If genuinely unclear or not forex-relevant, say so in one line instead."""
 
-    resp = requests.post(
-        ANTHROPIC_URL,
-        headers={
-            "x-api-key": ANTHROPIC_API_KEY,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-        },
-        json={
-            "model": "claude-sonnet-4-6",
-            "max_tokens": 200,
-            "messages": [{"role": "user", "content": prompt}],
-        },
-        timeout=20,
-    )
-    resp.raise_for_status()
-    data = resp.json()
-    return "".join(block["text"] for block in data["content"] if block["type"] == "text")
+    try:
+        resp = requests.post(
+            ANTHROPIC_URL,
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": "claude-sonnet-4-6",
+                "max_tokens": 200,
+                "messages": [{"role": "user", "content": prompt}],
+            },
+            timeout=20,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return "".join(block["text"] for block in data["content"] if block["type"] == "text")
+    except Exception as e:
+        print(f"[news] breakdown generation failed: {e}")
+        if event_category and typical_impact:
+            return f"[AI breakdown failed] {typical_impact}"
+        return "[AI breakdown temporarily unavailable]"
 
 
 def load_feed():

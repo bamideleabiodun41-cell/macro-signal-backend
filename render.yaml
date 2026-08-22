@@ -1,0 +1,30 @@
+# Render deployment config
+# Docs: https://render.com/docs/blueprint-spec
+#
+# To deploy:
+#   1. Push all these files (api_server.py, nfp_predictor.py, cpi_predictor.py,
+#      ppi_predictor.py, gdp_predictor.py, pce_predictor.py, gbp_cpi_predictor.py,
+#      aud_employment_predictor.py, news_pipeline.py, revision_engine.py,
+#      calendar_feed.py, scheduler.py, signal_engine.py, performance_tracker.py,
+#      requirements.txt, render.yaml) to a GitHub repo.
+#   2. On render.com: New -> Blueprint -> connect that repo. Render reads this
+#      file automatically and sets everything up.
+#   3. Add your real API keys as environment variables in the Render dashboard
+#      (Environment tab) — do NOT commit real keys into the repo.
+
+services:
+  - type: web
+    name: macro-signal-api
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --workers 1 --threads 4 --timeout 120 --bind 0.0.0.0:$PORT api_server:app
+    envVars:
+      - key: FRED_API_KEY
+        sync: false
+      - key: NEWSAPI_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: PYTHON_VERSION
+        value: 3.11.0

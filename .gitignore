@@ -1,0 +1,16 @@
+# Generated data files — these get created at runtime, not committed
+active_predictions.json
+breaking_news_feed.json
+revision_log.json
+release_schedule.json
+performance_log.json
+*_prediction_latest.json
+
+# Never commit real keys
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/

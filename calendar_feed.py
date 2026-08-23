@@ -43,13 +43,27 @@ AUD_NEXT_RELEASE_MANUAL = "2026-09-17T01:30:00+00:00"  # Labour Force, Australia
 
 
 def fetch_fred_next_release(release_id):
-    """Get the next upcoming release date for a given FRED release ID."""
+    """
+    Get the next upcoming release date for a given FRED release ID.
+
+    IMPORTANT: FRED's release/dates endpoint defaults realtime_end to
+    today, meaning it silently returns nothing beyond today unless we
+    explicitly extend the window forward. Without this, every call
+    returns only past dates, which then get filtered out — looking
+    like "no upcoming release" for every indicator. Setting
+    realtime_end ~6 months out fixes that.
+    """
+    today = datetime.now(timezone.utc).date()
+    future_end = today + timedelta(days=180)
+
     params = {
         "release_id": release_id,
         "api_key": FRED_API_KEY,
         "file_type": "json",
         "include_release_dates_with_no_data": "false",
         "sort_order": "asc",
+        "realtime_start": today.isoformat(),
+        "realtime_end": future_end.isoformat(),
     }
     resp = requests.get(FRED_RELEASES_URL, params=params, timeout=10)
     resp.raise_for_status()

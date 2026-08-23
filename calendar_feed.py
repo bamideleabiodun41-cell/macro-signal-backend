@@ -69,6 +69,11 @@ def fetch_fred_next_release(release_id):
     resp.raise_for_status()
     dates = resp.json().get("release_dates", [])
 
+    # Diagnostic: this prints to Render logs so we can see exactly what
+    # FRED returned instead of guessing why nothing comes back.
+    print(f"[calendar debug] release_id={release_id} got {len(dates)} dates, "
+          f"sample={dates[:3] if dates else 'EMPTY'}")
+
     now = datetime.now(timezone.utc).date()
     for entry in dates:
         release_date = datetime.strptime(entry["date"], "%Y-%m-%d").date()

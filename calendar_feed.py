@@ -35,6 +35,17 @@ FRED_RELEASE_IDS = {
     "PCE": 54,      # Personal Income and Outlays
 }
 
+# How often each release actually happens — used to estimate the next
+# date from the last known actual date. GDP is quarterly; the rest are
+# monthly.
+FRED_RELEASE_CADENCE_DAYS = {
+    "NFP": 30,
+    "CPI": 30,
+    "PPI": 30,
+    "GDP": 91,
+    "PCE": 30,
+}
+
 # AUD release dates have no clean free API — ABS publishes a release
 # calendar on their site but not as structured JSON. Update manually
 # each month from https://www.abs.gov.au/release-calendar until a
@@ -42,60 +53,68 @@ FRED_RELEASE_IDS = {
 AUD_NEXT_RELEASE_MANUAL = "2026-09-17T01:30:00+00:00"  # Labour Force, Australia
 
 
-def fetch_fred_next_release(release_id):
+def fetch_fred_next_release(release_id, cadence_days=30):
     """
-    Get the next upcoming release date for a given FRED release ID.
+    Get the next release date for a given FRED release ID.
 
-    Deliberately does NOT set realtime_start/realtime_end — testing
-    showed that explicitly requesting a future window returns zero
-    results (likely because these params scope which vintage of the
-    release-dates record to view, not which calendar dates to return).
-    The plain default call, sorted ascending with no realtime override,
-    is the standard approach used by third-party FRED clients and
-    returns the full history including known future scheduled dates.
+    IMPORTANT DISCOVERY: FRED's release/dates endpoint only returns
+    dates when data has ALREADY been published — it's a historical
+    log, not a forward-looking calendar. There is no combination of
+    parameters that makes it return not-yet-happened dates. So instead
+    we take the most recent actual date and estimate the next one
+    using the release's typical cadence (monthly releases ~30 days,
+    GDP quarterly ~91 days — pass cadence_days accordingly).
+
+    This is an ESTIMATE, not a confirmed date. The prediction/scheduler
+    logic should treat it as approximate — good enough to trigger the
+    24h-before publish window in the right general timeframe, but not
+    precise to the hour/day the way a real BLS/BEA calendar would be.
     """
     params = {
         "release_id": release_id,
         "api_key": FRED_API_KEY,
         "file_type": "json",
         "include_release_dates_with_no_data": "false",
-        "sort_order": "asc",
-        "limit": 1000,
+        "sort_order": "desc",  # most recent first — we just need the latest
+        "limit": 1,
     }
     resp = requests.get(FRED_RELEASES_URL, params=params, timeout=10)
     resp.raise_for_status()
     dates = resp.json().get("release_dates", [])
 
-    print(f"[calendar debug] release_id={release_id} got {len(dates)} dates, "
-          f"sample={dates[:3] if dates else 'EMPTY'}, "
-          f"last3={dates[-3:] if dates else 'EMPTY'}")
+    if not dates:
+        print(f"[calendar] release_id={release_id}: no historical dates found at all")
+        return None
 
-    now = datetime.now(timezone.utc).date()
-    for entry in dates:
-        release_date = datetime.strptime(entry["date"], "%Y-%m-%d").date()
-        if release_date >= now:
-            # FRED gives date only, not time — US releases are
-            # conventionally 8:30am ET (12:30 or 13:30 UTC depending
-            # on daylight saving). Flagged as an approximation.
-            return f"{entry['date']}T12:30:00+00:00"
-    return None
+    last_actual = datetime.strptime(dates[0]["date"], "%Y-%m-%d").date()
+    estimated_next = last_actual + timedelta(days=cadence_days)
+
+    # If our estimate is somehow still in the past (e.g. cadence_days
+    # too short), keep adding the interval until it's in the future.
+    today = datetime.now(timezone.utc).date()
+    while estimated_next < today:
+        estimated_next += timedelta(days=cadence_days)
+
+    print(f"[calendar] release_id={release_id}: last actual={last_actual}, "
+          f"estimated next={estimated_next}")
+
+    return f"{estimated_next.isoformat()}T12:30:00+00:00"
 
 
 def fetch_ons_next_cpi_release():
     """
-    ONS beta API lists upcoming releases. Filters for CPI-related
-    releases. ONS release names shift wording occasionally — this
-    does a loose substring match rather than relying on an exact ID.
+    CONFIRMED BROKEN via live testing: api.beta.ons.gov.uk returns 404
+    for this query shape — ONS has restructured their API since this
+    was written. Falls back to manual entry, same pattern as AUD,
+    until someone finds ONS's current working endpoint structure.
+    UK CPI is released monthly, typically in the third week.
     """
-    params = {"query": "consumer price inflation", "upcoming": "true"}
-    resp = requests.get(ONS_CALENDAR_URL, params=params, timeout=10)
-    resp.raise_for_status()
-    items = resp.json().get("items", [])
-    if not items:
-        return None
-    # Take the soonest matching release
-    soonest = sorted(items, key=lambda x: x.get("release_date", ""))[0]
-    return soonest.get("release_date")
+    return None  # forces the manual fallback in build_release_schedule()
+
+
+# GBP CPI release dates have no working automated source right now —
+# update manually from https://www.ons.gov.uk/releasecalendar
+GBP_CPI_NEXT_RELEASE_MANUAL = "2026-09-16T06:00:00+00:00"
 
 
 def build_release_schedule():
@@ -107,16 +126,18 @@ def build_release_schedule():
 
     for indicator, release_id in FRED_RELEASE_IDS.items():
         try:
-            schedule[indicator] = fetch_fred_next_release(release_id)
+            cadence = FRED_RELEASE_CADENCE_DAYS.get(indicator, 30)
+            schedule[indicator] = fetch_fred_next_release(release_id, cadence_days=cadence)
         except Exception as e:
             print(f"[warning] FRED calendar fetch failed for {indicator}: {e}")
             schedule[indicator] = None
 
     try:
-        schedule["GBP CPI"] = fetch_ons_next_cpi_release()
+        gbp_result = fetch_ons_next_cpi_release()
+        schedule["GBP CPI"] = gbp_result if gbp_result else GBP_CPI_NEXT_RELEASE_MANUAL
     except Exception as e:
         print(f"[warning] ONS calendar fetch failed: {e}")
-        schedule["GBP CPI"] = None
+        schedule["GBP CPI"] = GBP_CPI_NEXT_RELEASE_MANUAL
 
     schedule["AUD Employment"] = AUD_NEXT_RELEASE_MANUAL
 

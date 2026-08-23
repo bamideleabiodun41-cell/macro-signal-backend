@@ -26,6 +26,7 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 from flask import Flask, jsonify
+from flask_cors import CORS
 
 import news_pipeline
 import revision_engine
@@ -41,6 +42,7 @@ import scheduler
 import performance_tracker
 
 app = Flask(__name__)
+CORS(app)  # allows the Netlify-hosted frontend (a different domain) to call this API
 
 STATE = {
     "last_news_poll": None,

@@ -46,33 +46,29 @@ def fetch_fred_next_release(release_id):
     """
     Get the next upcoming release date for a given FRED release ID.
 
-    IMPORTANT: FRED's release/dates endpoint defaults realtime_end to
-    today, meaning it silently returns nothing beyond today unless we
-    explicitly extend the window forward. Without this, every call
-    returns only past dates, which then get filtered out — looking
-    like "no upcoming release" for every indicator. Setting
-    realtime_end ~6 months out fixes that.
+    Deliberately does NOT set realtime_start/realtime_end — testing
+    showed that explicitly requesting a future window returns zero
+    results (likely because these params scope which vintage of the
+    release-dates record to view, not which calendar dates to return).
+    The plain default call, sorted ascending with no realtime override,
+    is the standard approach used by third-party FRED clients and
+    returns the full history including known future scheduled dates.
     """
-    today = datetime.now(timezone.utc).date()
-    future_end = today + timedelta(days=180)
-
     params = {
         "release_id": release_id,
         "api_key": FRED_API_KEY,
         "file_type": "json",
         "include_release_dates_with_no_data": "false",
         "sort_order": "asc",
-        "realtime_start": today.isoformat(),
-        "realtime_end": future_end.isoformat(),
+        "limit": 1000,
     }
     resp = requests.get(FRED_RELEASES_URL, params=params, timeout=10)
     resp.raise_for_status()
     dates = resp.json().get("release_dates", [])
 
-    # Diagnostic: this prints to Render logs so we can see exactly what
-    # FRED returned instead of guessing why nothing comes back.
     print(f"[calendar debug] release_id={release_id} got {len(dates)} dates, "
-          f"sample={dates[:3] if dates else 'EMPTY'}")
+          f"sample={dates[:3] if dates else 'EMPTY'}, "
+          f"last3={dates[-3:] if dates else 'EMPTY'}")
 
     now = datetime.now(timezone.utc).date()
     for entry in dates:

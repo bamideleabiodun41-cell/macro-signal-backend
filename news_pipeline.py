@@ -40,6 +40,17 @@ IMPACT_KEYWORDS = {
                "yield", "bond", "unemployment", "stimulus"],
 }
 
+# Personal-finance / retail-investing clickbait uses the same vocabulary
+# (yield, bond, treasury) as genuine macro news but isn't actually
+# relevant to forex positioning. If any of these phrases appear, the
+# item is excluded regardless of keyword matches above — this is what
+# was letting things like "$10,000 a Year on $100K" through.
+NOISE_EXCLUSION_PHRASES = [
+    "how to retire", "passive income", "get rich", "side hustle",
+    "% apy", "high-yield savings", "credit card rewards", "best stocks to buy",
+    "millionaire", "financial freedom", "dividend stocks to buy",
+]
+
 # Geopolitical/event categories — separate from data-release news, these get
 # their own tag + currency mapping since the "why it matters" logic differs
 # (safe-haven flows, leadership uncertainty, supply shocks) vs. data surprises.
@@ -103,10 +114,22 @@ def fetch_latest_news(minutes_back=10):
 
 def score_impact(headline, description):
     text = f"{headline} {description or ''}".lower()
+    headline_lower = headline.lower()
+
+    # Hard exclusion first — personal-finance clickbait reuses macro
+    # vocabulary (yield, bond) without being relevant to forex.
+    if any(phrase in text for phrase in NOISE_EXCLUSION_PHRASES):
+        return 0
+
     if any(kw in text for kw in IMPACT_KEYWORDS["high"]):
         return 3
-    if any(kw in text for kw in IMPACT_KEYWORDS["medium"]):
+
+    # Medium-tier generic finance terms (yield, bond, treasury, etc.)
+    # must appear in the HEADLINE, not just a description snippet —
+    # this cuts down on incidental matches in unrelated articles.
+    if any(kw in headline_lower for kw in IMPACT_KEYWORDS["medium"]):
         return 2
+
     return 0  # below threshold, skip
 
 

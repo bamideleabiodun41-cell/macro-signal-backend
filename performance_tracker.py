@@ -24,15 +24,24 @@ PREDICTIONS_FILE = "active_predictions.json"
 PERFORMANCE_LOG_FILE = "performance_log.json"
 
 # Maps each indicator to the actual-data FRED series to check against.
-# GBP CPI / AUD Employment need their own actual-data sources (ONS/ABS)
-# — not wired here yet since those APIs return actuals differently.
+# GBP CPI and AUD Employment now included — both sourced via FRED's
+# mirror of OECD data, avoiding the ONS/ABS APIs that proved broken
+# or awkward to use directly.
 ACTUAL_DATA_SERIES = {
     "NFP": "PAYEMS",
     "CPI": "CPIAUCSL",
     "PPI": "PPIFIS",
     "GDP": "GDP",
     "PCE": "PCEPI",
+    "GBP CPI": "GBRCPIALLMINMEI",       # UK CPI, OECD-sourced via FRED
+    "AUD Employment": "LRHUTTTTAUM156S", # Australia unemployment RATE (not a jobs-count level)
 }
+
+# AUD Employment's only clean FRED-available actual is unemployment
+# rate, not an employment-count level like the prediction range uses.
+# Different units mean it can't use the normal range-containment check
+# — it gets a dedicated directional evaluator instead (see below).
+INVERSE_RATE_INDICATORS = {"AUD Employment"}
 
 
 def load_json(path, default):
@@ -89,6 +98,36 @@ def evaluate_prediction(prediction, actual):
     }
 
 
+def evaluate_inverse_rate_prediction(prediction, actual):
+    """
+    For indicators like AUD Employment, where the only clean actual
+    available is unemployment RATE (not a jobs-count level matching
+    the prediction's range units) — checks direction only, not range
+    containment, since the units genuinely don't correspond.
+
+    Falling unemployment = stronger labour market = supports "hot".
+    Rising unemployment = weaker labour market = supports "soft".
+    """
+    rate_change = actual["change"]  # positive = unemployment rose
+
+    if prediction["verdict"] == "hot":
+        direction_correct = rate_change < 0
+    elif prediction["verdict"] == "soft":
+        direction_correct = rate_change > 0
+    else:
+        direction_correct = abs(rate_change) < 0.1  # roughly flat, in percentage points
+
+    return {
+        "in_range": None,  # not meaningful here — units don't match
+        "direction_correct": direction_correct,
+        "predicted_range": prediction["range"],
+        "predicted_base_case": prediction["base_case"],
+        "actual_value": rate_change,
+        "actual_value_note": "unemployment rate change (pp), not a jobs-count — units differ from predicted range",
+        "actual_date": actual["date"],
+    }
+
+
 def check_released_predictions():
     """
     Scans active_predictions.json for anything marked 'released' that
@@ -121,7 +160,10 @@ def check_released_predictions():
         if not actual:
             continue
 
-        evaluation = evaluate_prediction(prediction, actual)
+        if prediction["indicator"] in INVERSE_RATE_INDICATORS:
+            evaluation = evaluate_inverse_rate_prediction(prediction, actual)
+        else:
+            evaluation = evaluate_prediction(prediction, actual)
         entry = {
             "indicator": prediction["indicator"],
             "release_at": prediction["release_at"],

@@ -234,10 +234,12 @@ def poll_once():
         feed.insert(0, {
             "url": url,
             "headline": headline,
+            "description": description,
             "source": article.get("source", {}).get("name", "unknown"),
             "published_at": article.get("publishedAt"),
             "ingested_at": datetime.now(timezone.utc).isoformat(),
             "impact_score": impact,
+            "impact_level": "high" if impact == 3 else "medium",  # matches red/orange folder convention
             "event_category": event_category,
             "breakdown": breakdown,
         })

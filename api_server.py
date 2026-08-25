@@ -125,7 +125,7 @@ def get_prediction_detail(indicator):
 @app.route("/api/news", methods=["GET"])
 def get_news():
     feed = load_json(news_pipeline.FEED_FILE, [])
-    return jsonify(feed[:50])  # cap payload size
+    return jsonify(feed[:200])  # enough history for the frontend to group by day
 
 
 @app.route("/api/status", methods=["GET"])

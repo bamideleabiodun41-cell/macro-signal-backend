@@ -57,6 +57,7 @@ VALUE_TYPE = {
     "PCE": "percent_change",
     "GBP CPI": "percent_change",
     "GDP": "level_change",  # separate known issue (annualized rate vs raw $ level) — not fixed here
+    "AUD Employment": "level_change",  # raw pp difference on a rate series — correct as-is, made explicit here
 }
 
 

@@ -22,7 +22,7 @@ FRED_API_KEY = os.environ.get("FRED_API_KEY", "YOUR_KEY_HERE")
 FRED_BASE = "https://api.stlouisfed.org/fred/series/observations"
 
 SERIES = {
-    "healthcare_cpi": "CUSR0000SAM",  # Medical care CPI, as a PCE healthcare-weight proxy
+    "healthcare_cpi": "CPIMEDSL",  # Medical care CPI, as a PCE healthcare-weight proxy
 }
 
 

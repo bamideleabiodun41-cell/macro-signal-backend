@@ -20,7 +20,7 @@ FRED_BASE = "https://api.stlouisfed.org/fred/series/observations"
 SERIES = {
     "ppi_final_demand": "PPIFIS",         # PPI Final Demand
     "ppi_core": "WPSFD4131",              # PPI less food and energy
-    "ism_prices_paid_mfg": "NAPMPRI",     # ISM manufacturing prices paid index
+    "intermediate_input_costs": "WPSID61",  # PPI: Processed Goods for Intermediate Demand
     "wti_crude": "DCOILWTICO",
 }
 
@@ -44,13 +44,21 @@ def score_cpi_leading_signal(latest_cpi_verdict):
     return mapping.get(latest_cpi_verdict, ("neutral", 0))
 
 
-def score_ism_prices_paid(obs):
+def score_intermediate_input_costs(obs):
+    """
+    WPSID61 is a price index level (not a 0-100 diffusion index like ISM
+    was), so we score it by month-over-month trend rather than a fixed
+    threshold — rising intermediate input costs typically feed through
+    to final-demand PPI within 1-2 months.
+    """
     latest = obs[0][1]
-    if latest > 55:
-        return "strong", latest
-    elif latest < 48:
-        return "weak", latest
-    return "neutral", latest
+    prior = obs[1][1]
+    change_pct = (latest - prior) / prior
+    if change_pct > 0.01:
+        return "strong", change_pct
+    elif change_pct < -0.005:
+        return "weak", change_pct
+    return "neutral", change_pct
 
 
 def score_commodity_trend(wti_obs):
@@ -69,14 +77,14 @@ def build_prediction(latest_cpi_verdict="in-line"):
     latest_cpi_verdict: pass the verdict from the most recent cpi_predictor.py
     run — this is the leading-signal linkage your methodology calls for.
     """
-    ism_obs = fetch_series(SERIES["ism_prices_paid_mfg"])
+    input_cost_obs = fetch_series(SERIES["intermediate_input_costs"])
     wti_obs = fetch_series(SERIES["wti_crude"])
 
     cpi_signal, cpi_val = score_cpi_leading_signal(latest_cpi_verdict)
-    ism_signal, ism_val = score_ism_prices_paid(ism_obs)
+    input_cost_signal, input_cost_val = score_intermediate_input_costs(input_cost_obs)
     commodity_signal, commodity_val = score_commodity_trend(wti_obs)
 
-    signals = [cpi_signal, ism_signal, commodity_signal]
+    signals = [cpi_signal, input_cost_signal, commodity_signal]
     strong_count = signals.count("strong")
     weak_count = signals.count("weak")
 
@@ -96,7 +104,7 @@ def build_prediction(latest_cpi_verdict="in-line"):
         "confidence": "high" if abs(strong_count - weak_count) >= 2 else "medium",
         "components": [
             {"name": f"Prior CPI signal ({latest_cpi_verdict})", "signal": cpi_signal, "value": cpi_val},
-            {"name": "ISM prices paid (manufacturing)", "signal": ism_signal, "value": ism_val},
+            {"name": "Intermediate input costs (WPSID61)", "signal": input_cost_signal, "value": round(input_cost_val, 4)},
             {"name": "WTI crude trend", "signal": commodity_signal, "value": round(commodity_val, 4)},
         ],
     }

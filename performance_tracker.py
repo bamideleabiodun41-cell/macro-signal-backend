@@ -43,6 +43,22 @@ ACTUAL_DATA_SERIES = {
 # — it gets a dedicated directional evaluator instead (see below).
 INVERSE_RATE_INDICATORS = {"AUD Employment"}
 
+# How to interpret "change" for each indicator's actual value, so it
+# matches the units the predictor's range is actually expressed in.
+# CPI/PPI/PCE/GBP CPI predict a MoM PERCENT change (e.g. "0.2 to 0.4"
+# means 0.2%-0.4%), but FRED's raw index level difference is in INDEX
+# POINTS, not percent — comparing those directly was a real unit bug.
+# NFP predicts a raw jobs-count level change, which matches FRED's
+# level difference correctly as-is, so it stays untouched.
+VALUE_TYPE = {
+    "NFP": "level_change",
+    "CPI": "percent_change",
+    "PPI": "percent_change",
+    "PCE": "percent_change",
+    "GBP CPI": "percent_change",
+    "GDP": "level_change",  # separate known issue (annualized rate vs raw $ level) — not fixed here
+}
+
 
 def load_json(path, default):
     if os.path.exists(path):
@@ -56,7 +72,13 @@ def save_json(path, data):
         json.dump(data, f, indent=2)
 
 
-def fetch_latest_actual(series_id):
+def fetch_latest_actual(series_id, value_type="level_change"):
+    """
+    value_type controls what "change" means in the returned dict:
+      - "level_change": latest - prior, raw units (jobs count, $ level)
+      - "percent_change": (latest - prior) / prior * 100, matching a
+        predictor's MoM percent range (e.g. CPI's "0.2 to 0.4")
+    """
     params = {
         "series_id": series_id, "api_key": FRED_API_KEY,
         "file_type": "json", "sort_order": "desc", "limit": 2,
@@ -67,7 +89,13 @@ def fetch_latest_actual(series_id):
     if len(obs) < 2:
         return None
     latest, prior = obs[0][1], obs[1][1]
-    return {"date": obs[0][0], "level": latest, "change": latest - prior}
+
+    if value_type == "percent_change":
+        change = ((latest - prior) / prior) * 100
+    else:
+        change = latest - prior
+
+    return {"date": obs[0][0], "level": latest, "change": change}
 
 
 def evaluate_prediction(prediction, actual):
@@ -152,7 +180,8 @@ def check_released_predictions():
             continue
 
         try:
-            actual = fetch_latest_actual(series_id)
+            value_type = VALUE_TYPE.get(prediction["indicator"], "level_change")
+            actual = fetch_latest_actual(series_id, value_type=value_type)
         except Exception as e:
             print(f"[performance] failed to fetch actual for {prediction['indicator']}: {e}")
             continue

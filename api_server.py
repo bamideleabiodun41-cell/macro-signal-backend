@@ -37,6 +37,7 @@ import gdp_predictor
 import pce_predictor
 import gbp_cpi_predictor
 import aud_employment_predictor
+import fomc_predictor
 import calendar_feed
 import scheduler
 import performance_tracker
@@ -104,6 +105,7 @@ RESCORE_FUNCTIONS = {
     "PCE": rescore_pce,
     "GBP CPI": gbp_cpi_predictor.build_prediction,
     "AUD Employment": aud_employment_predictor.build_prediction,
+    "FOMC": fomc_predictor.build_prediction,  # chains internally off CPI/NFP/PCE/GDP
 }
 
 
@@ -144,16 +146,13 @@ def manual_refresh():
     return jsonify({"new_news_items": new_items})
 
 
-@app.route("/api/rebuild-all", methods=["GET", "POST"])
-def rebuild_all_predictions():
+def rebuild_all_predictions_now():
     """
-    Runs every registered predictor fresh and replaces active_predictions.json.
-    Intended to run once daily (or manually) to publish the '24 hours before
-    release' predictions — separate from the revision engine, which only
-    updates predictions already in that file when breaking news hits.
-
-    Release timestamps now come from calendar_feed.py (live FRED/ONS pull,
-    cached for up to 12 hours) instead of being hardcoded.
+    The actual rebuild logic, extracted so it can run both as an API
+    route AND automatically at startup — this is the self-healing piece
+    that fixes data loss after Render's free tier spins down and wipes
+    the filesystem. No more needing to remember to visit /api/rebuild-all
+    by hand after every cold start.
     """
     release_schedule = get_release_schedule()
 
@@ -169,6 +168,17 @@ def rebuild_all_predictions():
     with open(revision_engine.PREDICTIONS_FILE, "w") as f:
         json.dump(predictions, f, indent=2)
 
+    return predictions
+
+
+@app.route("/api/rebuild-all", methods=["GET", "POST"])
+def rebuild_all_predictions():
+    """
+    Manual trigger for the same self-healing logic that now also runs
+    automatically at startup. Still useful for forcing an immediate
+    refresh without waiting.
+    """
+    predictions = rebuild_all_predictions_now()
     return jsonify({"rebuilt": [p["indicator"] for p in predictions]})
 
 
@@ -237,11 +247,43 @@ if not os.path.exists(revision_engine.PREDICTIONS_FILE):
     with open(revision_engine.PREDICTIONS_FILE, "w") as f:
         json.dump([], f)
 
+
+def startup_self_heal():
+    """
+    Render's free tier wipes the filesystem every time the service
+    spins down from inactivity and back up — this is why predictions
+    kept vanishing after the site sat idle for a while. Rather than
+    requiring a human to remember to visit /api/rebuild-all after every
+    cold start, check on boot: if predictions are missing or empty,
+    rebuild immediately in the background so the site is self-healing.
+    """
+    try:
+        existing = json.load(open(revision_engine.PREDICTIONS_FILE))
+    except Exception:
+        existing = []
+
+    if not existing:
+        print("[startup] no active predictions found — self-healing rebuild starting...")
+        try:
+            rebuilt = rebuild_all_predictions_now()
+            print(f"[startup] self-heal complete — rebuilt {len(rebuilt)} indicator(s)")
+        except Exception as e:
+            print(f"[startup] self-heal failed: {e}")
+    else:
+        print(f"[startup] found {len(existing)} existing prediction(s) — no self-heal needed")
+
+
 # Started at module level (not inside __main__) so this runs whether
 # the app is launched directly with `python api_server.py` OR imported
 # by a WSGI server like gunicorn, which never executes __main__.
 poll_thread = threading.Thread(target=background_loop, daemon=True)
 poll_thread.start()
+
+# Run the self-heal check in its own thread too, since it makes many
+# live API calls and shouldn't block the app from starting to serve
+# requests (including the frontend's first status check) while it runs.
+heal_thread = threading.Thread(target=startup_self_heal, daemon=True)
+heal_thread.start()
 
 
 if __name__ == "__main__":

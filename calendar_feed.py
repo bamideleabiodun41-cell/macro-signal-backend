@@ -35,6 +35,14 @@ FRED_RELEASE_IDS = {
     "PCE": 54,      # Personal Income and Outlays
 }
 
+# FOMC meeting dates are officially pre-announced by the Fed for the
+# full year, confirmed directly from federalreserve.gov — unlike every
+# other indicator here, these don't need estimating.
+FOMC_2026_MEETING_DATES = [
+    "2026-01-28", "2026-03-18", "2026-04-29", "2026-06-17",
+    "2026-07-29", "2026-09-16", "2026-10-28", "2026-12-09",
+]
+
 # How often each release actually happens — used to estimate the next
 # date from the last known actual date. GDP is quarterly; the rest are
 # monthly.
@@ -140,6 +148,17 @@ def build_release_schedule():
         schedule["GBP CPI"] = GBP_CPI_NEXT_RELEASE_MANUAL
 
     schedule["AUD Employment"] = AUD_NEXT_RELEASE_MANUAL
+
+    # FOMC: find the next meeting date from the confirmed official list.
+    # Statement releases at 2pm ET (18:00/19:00 UTC depending on DST).
+    today = datetime.now(timezone.utc).date()
+    next_fomc = None
+    for date_str in FOMC_2026_MEETING_DATES:
+        meeting_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        if meeting_date >= today:
+            next_fomc = date_str
+            break
+    schedule["FOMC"] = f"{next_fomc}T18:00:00+00:00" if next_fomc else None
 
     return schedule
 

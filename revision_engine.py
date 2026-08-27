@@ -51,6 +51,14 @@ RELEVANCE_MAP = {
         "event_categories": ["war_conflict", "central_bank_surprise", "leadership_change"],
         "keywords": ["rba", "reserve bank of australia", "iron ore", "china demand", "aussie jobs"],
     },
+    "FOMC": {
+        # Sits at the top of the cascade — reacts to nearly everything
+        # the other indicators react to, plus direct Fed commentary.
+        "event_categories": ["war_conflict", "central_bank_surprise", "leadership_change",
+                              "energy_supply_shock", "sanctions_trade"],
+        "keywords": ["fed", "fomc", "powell", "rate decision", "dot plot",
+                     "jobs", "inflation", "gdp", "recession"],
+    },
 }
 
 

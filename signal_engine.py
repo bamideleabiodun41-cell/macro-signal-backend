@@ -59,6 +59,18 @@ PAIR_SIGNAL_MAP = {
         "soft":    [("AUD/USD", "SELL", "Weak labour data supports a dovish RBA lean, typically AUD-negative")],
         "in-line": [("AUD/USD", "Moderate", "In-line print unlikely to shift RBA expectations")],
     },
+    "FOMC": {
+        "hawkish hold": [("EUR/USD", "SELL", "Fed holding with hawkish tone typically supports the dollar"),
+                          ("USD/JPY", "BUY", "Rate differential favors dollar strength on a hawkish hold"),
+                          ("Gold", "SELL", "Higher-for-longer rate expectations typically pressure gold")],
+        "dovish hold": [("EUR/USD", "BUY", "Hold with dovish signaling suggests cuts are coming, typically dollar-negative"),
+                         ("Gold", "BUY", "Anticipated future cuts typically support gold even before they happen")],
+        "cut likely":  [("EUR/USD", "BUY", "Rate cut expectations typically weaken the dollar"),
+                         ("USD/JPY", "SELL", "Narrowing rate differential typically supports yen on a cut"),
+                         ("Gold", "BUY", "Rate cuts typically support gold via lower real yields")],
+        "hold":        [("EUR/USD", "Moderate", "Mixed signals — no strong directional lean from the data"),
+                         ("Gold", "Moderate", "Limited directional catalyst from a genuinely mixed setup")],
+    },
 }
 
 # Plain-language label shown alongside the raw numeric verdict, for
@@ -113,7 +125,10 @@ def attach_trade_signals(prediction):
         }
         for pair, direction, rationale in signal_templates
     ]
-    prediction["simple_verdict"] = SIMPLE_VERDICT_LABEL.get(verdict, "Unclear")
+    # Some predictors (e.g. FOMC) use their own verdict vocabulary that
+    # doesn't map onto the standard hot/soft/in-line labels — they can
+    # supply simple_verdict_override directly, which takes priority.
+    prediction["simple_verdict"] = prediction.get("simple_verdict_override") or SIMPLE_VERDICT_LABEL.get(verdict, "Unclear")
     prediction["signals_generated_at"] = datetime.now(timezone.utc).isoformat()
 
     return prediction
